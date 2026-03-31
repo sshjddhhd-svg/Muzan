@@ -1,54 +1,123 @@
-const { getTime } = global.utils;
+const fs = require("fs-extra");
+const path = require("path");
 
+// ملف الإعدادات المشترك مع lockdown.js
+const settingsPath = path.join(__dirname, "autoinvite_settings.json");
+
+// ─── تحميل الإعدادات بأمان ────────────────────────────────────────────────────
+function loadSettings() {
+  try {
+    if (!fs.existsSync(settingsPath)) return {};
+    const raw = fs.readFileSync(settingsPath, "utf8").trim();
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+// ─── رسالة الإعادة ───────────────────────────────────────────────────────────
+function buildMessage(userName) {
+  return (
+    `🚫 يا ${userName}!\n` +
+    `ولد قح وين راك هارب ارواح لهنا😈\n\n` +
+    `━━━━━━━━━━━━━━━\n` +
+    `🤖 اني شايفك يال97 حاب تهرب 👀\n` +
+    `━━━━━━━━━━━━━━━`
+  );
+}
+
+// ─── الحصول على اسم المستخدم بأمان ───────────────────────────────────────────
+async function getUserName(api, usersData, userID) {
+  // محاولة 1: من قاعدة بيانات البوت
+  try {
+    const name = await usersData.getName(userID);
+    if (name && name !== "Facebook User") return name;
+  } catch {}
+
+  // محاولة 2: من API فيسبوك مباشرة
+  try {
+    const info = await api.getUserInfo([userID]);
+    if (info && info[userID]) {
+      const u = info[userID];
+      const name = u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim();
+      if (name) return name;
+    }
+  } catch {}
+
+  return "صديق"; // اسم افتراضي إذا فشلت كل المحاولات
+}
+
+// ─── Module ───────────────────────────────────────────────────────────────────
 module.exports = {
   config: {
     name: "autoinvite",
-    version: "2.5",
-    author: "Mohammad Akash",
+    version: "4.0",
+    author: "Djamel",
     category: "events"
   },
 
+  // ✅ في GoatBot v2، الأحداث تستخدم onStart (وليس onEvent)
   onStart: async ({ api, event, usersData, message }) => {
+    // ✅ تأكد أن الحدث هو مغادرة عضو
     if (event.logMessageType !== "log:unsubscribe") return;
 
     const { threadID, logMessageData, author } = event;
+
+    // ✅ تأكد أن البيانات موجودة
+    if (!logMessageData) return;
+
     const leftID = logMessageData.leftParticipantFbId;
+    if (!leftID) return;
 
-    // যদি কেউ নিজের ইচ্ছায় লিভ নেয় (kick না)
-    if (leftID === author) {
-      const userName = await usersData.getName(leftID);
+    // ✅ تجاهل إذا كان طرداً من أدمن (الشخص الذي غادر ≠ من أصدر الأمر)
+    if (leftID !== author) return;
 
-      // Messenger-friendly bold font map
-      const boldMap = {
-        A: "𝗔", B: "𝗕", C: "𝗖", D: "𝗗", E: "𝗘", F: "𝗙", G: "𝗚", H: "𝗛", I: "𝗜", J: "𝗝",
-        K: "𝗞", L: "𝗟", M: "𝗠", N: "𝗡", O: "𝗢", P: "𝗣", Q: "𝗤", R: "𝗥", S: "𝗦", T: "𝗧",
-        U: "𝗨", V: "𝗩", W: "𝗪", X: "𝗫", Y: "𝗬", Z: "𝗭",
-        a: "𝗮", b: "𝗯", c: "𝗰", d: "𝗱", e: "𝗲", f: "𝗳", g: "𝗴", h: "𝗵", i: "𝗶", j: "𝗷",
-        k: "𝗸", l: "𝗹", m: "𝗺", n: "𝗻", o: "𝗼", p: "𝗽", q: "𝗾", r: "𝗿", s: "𝘀", t: "𝘁",
-        u: "𝘂", v: "𝘃", w: "𝘄", x: "𝘅", y: "𝘆", z: "𝘇"
-      };
+    // ✅ تجاهل إذا غادر البوت نفسه
+    try {
+      const botID = api.getCurrentUserID();
+      if (leftID === botID) return;
+    } catch {}
 
-      const boldName = userName.split("").map(c => boldMap[c] || c).join("");
+    // ✅ تحقق من إعداد lockdown لهذه المجموعة
+    const settings = loadSettings();
+    if (!settings[threadID]) return; // لا يعمل إلا إذا تم تفعيله بـ /lockdown on
 
-      const form = {
-        body: `🛑 এই বলদ....!! 😹  
-${boldName}  
-💬 গ্রুপ থেকে লিভ নেওয়া কি মুখের কথা নাকি? 😏  
-👑 যে গ্রুপে আমি থাকি..?? 🐸  
-⚠️ সেই গ্রুপ থেকে লিভ নেওয়া অসম্ভব ভাই! 😂  
-🌀 আবার অ্যাড করে দিলাম 😇  
+    // ✅ تنفيذ الإعادة مع معالجة كاملة للأخطاء
+    try {
+      const userName = await getUserName(api, usersData, leftID);
 
-━━━━━━━━━━━━━━━
-👑 𝗕𝗼𝘁 𝗢𝘄𝗻𝗲𝗿 : 𝗔𝗸𝗮𝘀𝗵 💎
-━━━━━━━━━━━━━━━`
-      };
+      // حاول إعادة المستخدم للمجموعة
+      await api.addUserToGroup(leftID, threadID);
 
-      try {
-        await api.addUserToGroup(leftID, threadID);
-        await message.send(form);
-      } catch (err) {
-        message.send("⚠️ দুঃখিত, আমি ইউজারটাকে আবার অ্যাড করতে পারিনি। সম্ভবত অ্যাড ব্লক করা আছে।");
+      // أرسل رسالة في المجموعة
+      await api.sendMessage(buildMessage(userName), threadID);
+
+    } catch (err) {
+      const errMsg = err?.message || "";
+
+      // إذا البوت لا يملك صلاحية الإضافة
+      if (
+        errMsg.includes("admin") ||
+        errMsg.includes("permission") ||
+        errMsg.includes("not allowed") ||
+        errMsg.includes("1545010")
+      ) {
+        try {
+          await api.sendMessage(
+            "⚠️ لا أستطيع إعادة العضو لأنني لست أدمناً في هذه المجموعة.\n" +
+            "اجعلني أدمناً لتفعيل هذه الخاصية.",
+            threadID
+          );
+        } catch {}
+      } else if (errMsg.includes("blocked") || errMsg.includes("1545012")) {
+        // المستخدم حجب البوت أو المجموعة
+        try {
+          await api.sendMessage("⚠️ تعذّرت إعادة إضافة العضو.", threadID);
+        } catch {}
       }
+      // لا ترسل رسالة خطأ لأسباب أخرى (لتجنب إزعاج المجموعة)
+      console.error("[autoinvite]", errMsg.slice(0, 100));
     }
   }
 };
